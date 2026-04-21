@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * CORE PHILOSOPHY:
+     * This ruleset enforces a strict collaboration model using denormalized authorization data.
+     * Access control is decentralized; authorization decisions for high-traffic documents (Boards) 
+     * are made using data stored directly on the document (the 'members' map and 'ownerId' field) 
+     * to ensure high performance and atomicity without the need for additional lookups.
+     *
+     * DATA STRUCTURE:
+     * - /users/{userId}: Private user profiles accessible only by the owner.
+     * - /boards/{boardId}: Top-level collection for collaborative drawing boards.
+     * - /boards/{boardId}/collaborations: Detail records of user roles on a board.
+     * - /boards/{boardId}/invitations: Invitation tokens for sharing board access.
+     * - /boards/{boardId}/messages: Chat history for a specific board.
+     *
+     * KEY SECURITY DECISIONS:
+     * - DENORMALIZATION: The 'Board' document contains a 'members' map {uid: role}. This is the source 
+     *   of truth for rules checking access to the board and its subcollections.
+     * - ANONYMOUS AUTH: The system supports anonymous authentication. Users (even if not linked to 
+     *   a permanent account) are treated as authorized entities identified by their unique UID.
+     * - RELATIONAL INTEGRITY: Rules enforce that 'ownerId' or 'userId' fields match the creator's UID 
+     *   and remain immutable to prevent document hijacking.
+     */
+
+    // --- Helper Functions ---
+
+    /** Checks if the request is from an authenticated user (includes anonymous users). */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /** Checks if the authenticated user's UID matches the provided userId. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** Checks if the authenticated user owns the document and it exists. */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /** Helper to retrieve a parent board document for subcollection authorization. */
+    function getBoardData(boardId) {
+      return get(/databases/$(database)/documents/boards/$(boardId)).data;
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for the User profile documents.
+     * @path /users/{userId}
+     */
+    match /users/{userId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for Collaborative Drawing Boards.
+     * @path /boards/{boardId}
+     */
+    match /boards/{boardId} {
+      allow get, list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.members[request.auth.uid] != null);
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && resource != null && (resource.data.ownerId == request.auth.uid || resource.data.members[request.auth.uid] == 'editor') && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isSignedIn() && resource != null && resource.data.ownerId == request.auth.uid;
+
+      /**
+       * @description Rules for board messages (chat).
+       * @path /boards/{boardId}/messages/{messageId}
+       */
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && (getBoardData(boardId).ownerId == request.auth.uid || getBoardData(boardId).members[request.auth.uid] != null);
+        allow create: if isSignedIn() && (getBoardData(boardId).ownerId == request.auth.uid || getBoardData(boardId).members[request.auth.uid] != null) && request.resource.data.userId == request.auth.uid;
+      }
+
+      /**
+       * @description Rules for board collaborations (subcollection).
+       * @path /boards/{boardId}/collaborations/{collaborationId}
+       */
+      match /collaborations/{collaborationId} {
+        allow get, list: if isSignedIn() && (getBoardData(boardId).ownerId == request.auth.uid || getBoardData(boardId).members[request.auth.uid] != null);
+        allow create, update, delete: if isSignedIn() && getBoardData(boardId).ownerId == request.auth.uid;
+      }
+
+      /**
+       * @description Rules for board invitations.
+       * @path /boards/{boardId}/invitations/{invitationId}
+       */
+      match /invitations/{invitationId} {
+        allow get: if resource.data.status == 'pending' || (isSignedIn() && (getBoardData(boardId).ownerId == request.auth.uid || getBoardData(boardId).members[request.auth.uid] != null));
+        allow list: if isSignedIn() && (getBoardData(boardId).ownerId == request.auth.uid || getBoardData(boardId).members[request.auth.uid] != null);
+        allow create: if isSignedIn() && getBoardData(boardId).ownerId == request.auth.uid && request.resource.data.invitedByUserId == request.auth.uid;
+        allow update: if isSignedIn() && resource != null && (getBoardData(boardId).ownerId == request.auth.uid || request.resource.data.status == 'accepted');
+        allow delete: if isSignedIn() && resource != null && getBoardData(boardId).ownerId == request.auth.uid;
+      }
+    }
+  }
+}

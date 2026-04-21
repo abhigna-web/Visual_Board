@@ -1,0 +1,133 @@
+
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a registered user within the Collaborative Canvas application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's unique email address.",
+          "format": "email"
+        },
+        "username": {
+          "type": "string",
+          "description": "A display name or handle for the user."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user account was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user's profile information was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "username",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Board": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Board",
+      "type": "object",
+      "description": "Represents a collaborative drawing board.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Board entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The title or name of the drawing board."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Reference to the User who owns this board."
+        },
+        "strokes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Array of serialized drawing stroke objects."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ChatMessage",
+      "type": "object",
+      "description": "Represents a message sent in the board's chat.",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "text", "userId", "userName", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": { "$ref": "#/backend/entities/User" },
+          "description": "User profiles."
+        }
+      },
+      {
+        "path": "/boards/{boardId}",
+        "definition": {
+          "entityName": "Board",
+          "schema": { "$ref": "#/backend/entities/Board" },
+          "description": "Main board data."
+        }
+      },
+      {
+        "path": "/boards/{boardId}/messages/{messageId}",
+        "definition": {
+          "entityName": "ChatMessage",
+          "schema": { "$ref": "#/backend/entities/ChatMessage" },
+          "description": "Chat history for a board."
+        }
+      }
+    ]
+  }
+}
